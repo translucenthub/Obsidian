@@ -1377,15 +1377,23 @@ function Library:MakeDraggable(UI: GuiObject, DragFrame: GuiObject, IgnoreToggle
     local StartPos
     local FramePos
     local Dragging = false
+    local DragInput
     local Changed
+
+    local function IsValidInput(Input: InputObject)
+        return Input.UserInputType == Enum.UserInputType.MouseButton1
+            or Input.UserInputType == Enum.UserInputType.Touch
+    end
+
     DragFrame.InputBegan:Connect(function(Input: InputObject)
-        if not IsClickInput(Input) or IsMainWindow and Library.CantDragForced then
+        if not IsValidInput(Input) or (IsMainWindow and Library.CantDragForced) then
             return
         end
 
         StartPos = Input.Position
         FramePos = UI.Position
         Dragging = true
+        DragInput = Input
 
         Changed = Input.Changed:Connect(function()
             if Input.UserInputState ~= Enum.UserInputState.End then
@@ -1393,12 +1401,15 @@ function Library:MakeDraggable(UI: GuiObject, DragFrame: GuiObject, IgnoreToggle
             end
 
             Dragging = false
+            DragInput = nil
+
             if Changed and Changed.Connected then
                 Changed:Disconnect()
                 Changed = nil
             end
         end)
     end)
+
     Library:GiveSignal(UserInputService.InputChanged:Connect(function(Input: InputObject)
         if
             (not IgnoreToggled and not Library.Toggled)
@@ -1406,6 +1417,8 @@ function Library:MakeDraggable(UI: GuiObject, DragFrame: GuiObject, IgnoreToggle
             or not (ScreenGui and ScreenGui.Parent)
         then
             Dragging = false
+            DragInput = nil
+
             if Changed and Changed.Connected then
                 Changed:Disconnect()
                 Changed = nil
@@ -1414,28 +1427,40 @@ function Library:MakeDraggable(UI: GuiObject, DragFrame: GuiObject, IgnoreToggle
             return
         end
 
-        if Dragging and IsHoverInput(Input) then
+        if Dragging and Input == DragInput then
             local Delta = Input.Position - StartPos
-            UI.Position =
-                UDim2.new(FramePos.X.Scale, FramePos.X.Offset + Delta.X, FramePos.Y.Scale, FramePos.Y.Offset + Delta.Y)
+
+            UI.Position = UDim2.new(
+                FramePos.X.Scale,
+                FramePos.X.Offset + Delta.X,
+                FramePos.Y.Scale,
+                FramePos.Y.Offset + Delta.Y
+            )
         end
     end))
 end
 
-function Library:MakeResizable(UI: GuiObject, DragFrame: GuiObject, Callback: () -> ()?)
+function Library:MakeResizable(UI: GuiObject, DragFrame: GuiObject, Callback: (() -> ())?)
     local StartPos
     local FrameSize
     local Dragging = false
+    local DragInput
     local Changed
 
+    local function IsValidInput(Input: InputObject)
+        return Input.UserInputType == Enum.UserInputType.MouseButton1
+            or Input.UserInputType == Enum.UserInputType.Touch
+    end
+
     DragFrame.InputBegan:Connect(function(Input: InputObject)
-        if not IsClickInput(Input) then
+        if not IsValidInput(Input) then
             return
         end
 
         StartPos = Input.Position
         FrameSize = UI.Size
         Dragging = true
+        DragInput = Input
 
         Changed = Input.Changed:Connect(function()
             if Input.UserInputState ~= Enum.UserInputState.End then
@@ -1443,6 +1468,8 @@ function Library:MakeResizable(UI: GuiObject, DragFrame: GuiObject, Callback: ()
             end
 
             Dragging = false
+            DragInput = nil
+
             if Changed and Changed.Connected then
                 Changed:Disconnect()
                 Changed = nil
@@ -1453,6 +1480,8 @@ function Library:MakeResizable(UI: GuiObject, DragFrame: GuiObject, Callback: ()
     Library:GiveSignal(UserInputService.InputChanged:Connect(function(Input: InputObject)
         if not UI.Visible or not (ScreenGui and ScreenGui.Parent) then
             Dragging = false
+            DragInput = nil
+
             if Changed and Changed.Connected then
                 Changed:Disconnect()
                 Changed = nil
@@ -1461,14 +1490,16 @@ function Library:MakeResizable(UI: GuiObject, DragFrame: GuiObject, Callback: ()
             return
         end
 
-        if Dragging and IsHoverInput(Input) then
+        if Dragging and Input == DragInput then
             local Delta = Input.Position - StartPos
+
             UI.Size = UDim2.new(
                 FrameSize.X.Scale,
                 math.clamp(FrameSize.X.Offset + Delta.X, Library.MinSize.X, math.huge),
                 FrameSize.Y.Scale,
                 math.clamp(FrameSize.Y.Offset + Delta.Y, Library.MinSize.Y, math.huge)
             )
+
             if Callback then
                 Library:SafeCallback(Callback)
             end
@@ -4610,7 +4641,12 @@ do
         end
 
         Bar.InputBegan:Connect(function(Input: InputObject)
-            if not IsClickInput(Input) or Slider.Disabled then
+            local function IsValidInput(Input: InputObject)
+                return Input.UserInputType == Enum.UserInputType.MouseButton1
+                    or Input.UserInputType == Enum.UserInputType.Touch
+            end
+
+            if not IsValidInput(Input) or Slider.Disabled then
                 return
             end
 
@@ -4624,14 +4660,39 @@ do
                 Library.ActiveLoading.Sidebar.Container.ScrollingEnabled = false
             end
 
-            while IsDragInput(Input) do
-                local Location = Mouse.X
-                local Scale = math.clamp((Location - Bar.AbsolutePosition.X) / Bar.AbsoluteSize.X, 0, 1)
+            local Dragging = true
+            local Connection
+
+            Connection = Input.Changed:Connect(function()
+                if Input.UserInputState == Enum.UserInputState.End then
+                    Dragging = false
+
+                    if Connection and Connection.Connected then
+                        Connection:Disconnect()
+                        Connection = nil
+                    end
+                end
+            end)
+
+            while Dragging do
+                local PositionX = (Input.UserInputType == Enum.UserInputType.Touch)
+                    and Input.Position.X
+                    or Mouse.X
+
+                local Scale = math.clamp(
+                    (PositionX - Bar.AbsolutePosition.X) / Bar.AbsoluteSize.X,
+                    0,
+                    1
+                )
 
                 local OldValue = Slider.Value
-                Slider.Value = Round(Slider.Min + ((Slider.Max - Slider.Min) * Scale), Slider.Rounding)
+                Slider.Value = Round(
+                    Slider.Min + ((Slider.Max - Slider.Min) * Scale),
+                    Slider.Rounding
+                )
 
                 Slider:Display()
+
                 if Slider.Value ~= OldValue then
                     Library:SafeCallback(Slider.Callback, Slider.Value)
                     Library:SafeCallback(Slider.Changed, Slider.Value)
@@ -8485,7 +8546,13 @@ function Library:CreateWindow(WindowInfo)
         local Threshold = (WindowInfo.MinSidebarWidth + WindowInfo.SidebarCompactWidth) * WindowInfo.SidebarCollapseThreshold
         local StartPos, StartWidth
         local Dragging = false
+        local DragInput
         local Changed
+
+        local function IsValidInput(Input: InputObject)
+            return Input.UserInputType == Enum.UserInputType.MouseButton1
+                or Input.UserInputType == Enum.UserInputType.Touch
+        end
 
         local SidebarGrabber = New("TextButton", {
             AnchorPoint = Vector2.new(0.5, 0),
@@ -8495,22 +8562,9 @@ function Library:CreateWindow(WindowInfo)
             Text = "",
             Parent = DividerLine,
         })
-        SidebarGrabber.MouseEnter:Connect(function()
-            TweenService:Create(DividerLine, Library.TweenInfo, {
-                BackgroundColor3 = Library:GetLighterColor(Library.Scheme.OutlineColor),
-            }):Play()
-        end)
-        SidebarGrabber.MouseLeave:Connect(function()
-            if Dragging then
-                return
-            end
-            TweenService:Create(DividerLine, Library.TweenInfo, {
-                BackgroundColor3 = Library.Scheme.OutlineColor,
-            }):Play()
-        end)
 
         SidebarGrabber.InputBegan:Connect(function(Input: InputObject)
-            if not IsClickInput(Input) then
+            if not IsValidInput(Input) then
                 return
             end
 
@@ -8519,6 +8573,7 @@ function Library:CreateWindow(WindowInfo)
             StartPos = Input.Position
             StartWidth = Window:GetSidebarWidth()
             Dragging = true
+            DragInput = Input
 
             Changed = Input.Changed:Connect(function()
                 if Input.UserInputState ~= Enum.UserInputState.End then
@@ -8526,11 +8581,9 @@ function Library:CreateWindow(WindowInfo)
                 end
 
                 Library.CantDragForced = false
-                TweenService:Create(DividerLine, Library.TweenInfo, {
-                    BackgroundColor3 = Library.Scheme.OutlineColor,
-                }):Play()
-
                 Dragging = false
+                DragInput = nil
+
                 if Changed and Changed.Connected then
                     Changed:Disconnect()
                     Changed = nil
@@ -8539,30 +8592,22 @@ function Library:CreateWindow(WindowInfo)
         end)
 
         Library:GiveSignal(UserInputService.InputChanged:Connect(function(Input: InputObject)
-            if not Library.Toggled or not (ScreenGui and ScreenGui.Parent) then
-                Dragging = false
-                if Changed and Changed.Connected then
-                    Changed:Disconnect()
-                    Changed = nil
-                end
-
+            if not Dragging or Input ~= DragInput then
                 return
             end
 
-            if Dragging and IsHoverInput(Input) then
-                local Delta = Input.Position - StartPos
-                local Width = StartWidth + Delta.X
+            local Delta = Input.Position - StartPos
+            local Width = StartWidth + Delta.X
 
-                if WindowInfo.DisableCompactingSnap then
-                    Window:SetSidebarWidth(Width)
-                    return
-                end
+            if WindowInfo.DisableCompactingSnap then
+                Window:SetSidebarWidth(Width)
+                return
+            end
 
-                if Width > Threshold then
-                    Window:SetSidebarWidth(math.max(Width, WindowInfo.MinSidebarWidth))
-                else
-                    Window:SetSidebarWidth(WindowInfo.SidebarCompactWidth)
-                end
+            if Width > Threshold then
+                Window:SetSidebarWidth(math.max(Width, WindowInfo.MinSidebarWidth))
+            else
+                Window:SetSidebarWidth(WindowInfo.SidebarCompactWidth)
             end
         end))
     end
