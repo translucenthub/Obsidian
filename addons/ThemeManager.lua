@@ -48,8 +48,8 @@ do
     ThemeManager.AppliedToTab = false
     ThemeManager.BuiltInThemes = {
         ["Default"] = {
-        	1,
-        	{ FontColor = "ffffff", MainColor = "1f1f21", AccentColor = "4894ff", BackgroundColor = "1c1c1e", OutlineColor = "282828" },
+            1,
+            { FontColor = "ffffff", MainColor = "191919", AccentColor = "7d55ff", BackgroundColor = "0f0f0f", OutlineColor = "282828" },
         },
         ["BBot"] = {
             2,
@@ -280,8 +280,8 @@ do
             LibraryScheme["Font"] = Font.fromEnum(Enum.Font[theme["FontFace"]])
 
         else
-            FinalTheme["FontFace"] = "Code"
-            LibraryScheme["Font"] = Font.fromEnum(Enum.Font.Code)
+            FinalTheme["FontFace"] = "BuilderSans"
+            LibraryScheme["Font"] = Font.fromEnum(Enum.Font.BuilderSans)
         end
 
         for _, field in { "RedColor", "DarkColor", "WhiteColor" } do
